@@ -7,6 +7,7 @@ import '../models/weather.dart';
 import '../providers/journal_provider.dart';
 import '../services/weather_service.dart';
 import '../widgets/weather_display.dart';
+import '../main.dart';
 
 class CreateEntryScreen extends StatefulWidget {
   final JournalEntry? entry; // For editing existing entries
@@ -218,6 +219,10 @@ class _CreateEntryScreenState extends State<CreateEntryScreen> {
                 alignLabelWithHint: true,
               ),
               textAlignVertical: TextAlignVertical.top,
+              onChanged: (_) {
+                // Reset session timer on typing
+                resetSessionTimerCallback?.call();
+              },
             ),
             const SizedBox(height: 24),
             // Error Display

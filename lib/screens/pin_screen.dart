@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../main.dart';
 
 class PinScreen extends StatefulWidget {
   const PinScreen({super.key});
@@ -80,6 +81,10 @@ class _PinScreenState extends State<PinScreen> {
                   border: const OutlineInputBorder(),
                 ),
                 onSubmitted: (_) => _handleSubmit(),
+                onChanged: (_) {
+                  // Reset session timer on typing PIN
+                  resetSessionTimerCallback?.call();
+                },
               ),
               const SizedBox(height: 16),
               _isLoading

@@ -17,6 +17,9 @@ import 'dart:async'; // Added for Timer
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+// Global callback to reset session timer from anywhere
+void Function()? resetSessionTimerCallback;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
@@ -98,6 +101,7 @@ class _SessionManagerState extends State<SessionManager> with WidgetsBindingObse
     WidgetsBinding.instance.addObserver(this);
     _authProvider = Provider.of<AuthProvider>(context, listen: false);
     _resetSessionTimer();
+    resetSessionTimerCallback = _resetSessionTimer;
     print('[SessionManager] Initialized and timer started.');
   }
 
@@ -106,6 +110,7 @@ class _SessionManagerState extends State<SessionManager> with WidgetsBindingObse
     WidgetsBinding.instance.removeObserver(this);
     _sessionTimer?.cancel();
     _focusNode.dispose();
+    resetSessionTimerCallback = null;
     super.dispose();
   }
 
