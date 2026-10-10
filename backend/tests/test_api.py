@@ -68,10 +68,12 @@ def test_register_and_login():
 
 
 def test_journal_requires_authentication():
-    response = client.get("/api/entries")
+    response = client.get(
+        "/api/entries",
+        headers={"Cookie": ""},
+    )
 
     assert response.status_code == 401
-
 
 def test_create_list_update_and_delete_entry():
     _, headers = register_user()

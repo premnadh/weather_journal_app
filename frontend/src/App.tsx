@@ -3,18 +3,6 @@ import "./App.css";
 
 const API_URL = "";
 
-type User = {
-  id: number;
-  email: string;
-  created_at: string;
-};
-
-type AuthResponse = {
-  access_token: string;
-  token_type: string;
-  user: User;
-};
-
 type JournalEntry = {
   id: number;
   title: string;
@@ -55,25 +43,26 @@ async function readError(response: Response): Promise<string> {
   return "Something went wrong. Please try again.";
 }
 
-async function authenticatedFetch(
-  token: string,
+/**
+ * Requests use the browser's session cookie instead of a JWT
+ * stored in React state or browser-accessible storage.
+ */
+async function apiFetch(
   url: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const headers = new Headers(options.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-
   return fetch(url, {
     ...options,
-    headers,
+    credentials: "include",
   });
 }
 
 type AuthScreenProps = {
-  onAuthenticated: (token: string) => void;
+  onAuthenticated: () => void;
+  notice: string;
 };
 
-function AuthScreen({ onAuthenticated }: AuthScreenProps) {
+function AuthScreen({ onAuthenticated, notice }: AuthScreenProps) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -90,7 +79,7 @@ function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 
     try {
       if (mode === "register") {
-        const registration = await fetch(
+        const registration = await apiFetch(
           `${API_URL}/api/auth/register`,
           {
             method: "POST",
@@ -117,23 +106,27 @@ function AuthScreen({ onAuthenticated }: AuthScreenProps) {
         return;
       }
 
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await apiFetch(
+        `${API_URL}/api/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
         },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+      );
 
       if (!response.ok) {
         throw new Error(await readError(response));
       }
 
-      const result = (await response.json()) as AuthResponse;
-      onAuthenticated(result.access_token);
+      // The backend sets the HttpOnly session cookie.
+      // Do not store or read the access token in JavaScript.
+      onAuthenticated();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to sign in.",
@@ -213,6 +206,12 @@ function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               ? "Sign in to revisit your favourite moments."
               : "Create a private space for your daily moments."}
           </p>
+
+          {notice && (
+            <p className="feedback error" role="status">
+              {notice}
+            </p>
+          )}
 
           <form
             className="entry-form auth-form"
@@ -302,7 +301,10 @@ function AuthScreen({ onAuthenticated }: AuthScreenProps) {
 }
 
 function App() {
-  const [token, setToken] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [authNotice, setAuthNotice] = useState("");
+
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [form, setForm] = useState<EntryForm>(initialForm);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -311,26 +313,71 @@ function App() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const loadEntries = useCallback(async () => {
-    const accessToken = token;
+  const expireSession = useCallback(() => {
+    setIsAuthenticated(false);
+    setEntries([]);
+    setForm(initialForm);
+    setEditingId(null);
+    setAuthNotice("Your session has expired. Please sign in again.");
+    setError("");
+    setMessage("");
+  }, []);
 
-    if (!accessToken) {
+  // Restore the session after a page refresh.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        const response = await apiFetch(`${API_URL}/api/auth/me`);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.ok) {
+          setIsAuthenticated(true);
+          setAuthNotice("");
+        } else if (response.status === 401) {
+          setIsAuthenticated(false);
+        } else {
+          setAuthNotice(
+            "Unable to verify your session. Please try signing in again.",
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthNotice(
+            "Unable to connect to the server. Check your connection and try again.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckingSession(false);
+        }
+      }
+    }
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const loadEntries = useCallback(async () => {
+    if (!isAuthenticated) {
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await authenticatedFetch(
-        accessToken,
-        `${API_URL}/api/entries`,
-      );
+      const response = await apiFetch(`${API_URL}/api/entries`);
 
       if (response.status === 401) {
-        setToken(null);
-        throw new Error(
-          "Your session has expired. Please sign in again.",
-        );
+        expireSession();
+        return;
       }
 
       if (!response.ok) {
@@ -348,29 +395,26 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [isAuthenticated, expireSession]);
 
-   useEffect(() => {
-    if (token === null) {
+  // Load the current user's entries once the session is restored.
+  useEffect(() => {
+    if (!isAuthenticated) {
       return;
     }
 
     let cancelled = false;
 
-    async function loadInitialEntries(accessToken: string) {
+    async function loadInitialEntries() {
       try {
-        const response = await authenticatedFetch(
-          accessToken,
-          `${API_URL}/api/entries`,
-        );
+        const response = await apiFetch(`${API_URL}/api/entries`);
+
+        if (cancelled) {
+          return;
+        }
 
         if (response.status === 401) {
-          if (!cancelled) {
-            setToken(null);
-            setError(
-              "Your session has expired. Please sign in again.",
-            );
-          }
+          expireSession();
           return;
         }
 
@@ -399,16 +443,17 @@ function App() {
       }
     }
 
-    void loadInitialEntries(token);
+
+    void loadInitialEntries();
 
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [isAuthenticated, expireSession]);
 
-  function handleAuthenticated(accessToken: string) {
-    setLoading(true);
-    setToken(accessToken);
+  function handleAuthenticated() {
+    setIsAuthenticated(true);
+    setAuthNotice("");
     setError("");
     setMessage("");
   }
@@ -423,9 +468,7 @@ function App() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const accessToken = token;
-
-    if (!accessToken) {
+    if (!isAuthenticated) {
       return;
     }
 
@@ -440,23 +483,17 @@ function App() {
       : `${API_URL}/api/entries`;
 
     try {
-      const response = await authenticatedFetch(
-        accessToken,
-        url,
-        {
-          method: wasEditing ? "PATCH" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(form),
+      const response = await apiFetch(url, {
+        method: wasEditing ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(form),
+      });
 
       if (response.status === 401) {
-        setToken(null);
-        throw new Error(
-          "Your session has expired. Please sign in again.",
-        );
+        expireSession();
+        return;
       }
 
       if (!response.ok) {
@@ -509,12 +546,7 @@ function App() {
   }
 
   async function deleteEntry(id: number) {
-    const accessToken = token;
-
-    if (
-      !accessToken ||
-      !window.confirm("Delete this journal entry?")
-    ) {
+    if (!isAuthenticated || !window.confirm("Delete this journal entry?")) {
       return;
     }
 
@@ -522,17 +554,13 @@ function App() {
     setMessage("");
 
     try {
-      const response = await authenticatedFetch(
-        accessToken,
-        `${API_URL}/api/entries/${id}`,
-        { method: "DELETE" },
-      );
+      const response = await apiFetch(`${API_URL}/api/entries/${id}`, {
+        method: "DELETE",
+      });
 
       if (response.status === 401) {
-        setToken(null);
-        throw new Error(
-          "Your session has expired. Please sign in again.",
-        );
+        expireSession();
+        return;
       }
 
       if (!response.ok) {
@@ -552,8 +580,22 @@ function App() {
     }
   }
 
-  function logout() {
-    setToken(null);
+  async function logout() {
+    try {
+      const response = await apiFetch(`${API_URL}/api/auth/logout`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        setError("Could not sign out cleanly. Please try again.");
+        return;
+      }
+    } catch {
+      setError("Unable to contact the server to sign out.");
+      return;
+    }
+
+    setIsAuthenticated(false);
     setEntries([]);
     setForm(initialForm);
     setEditingId(null);
@@ -561,10 +603,26 @@ function App() {
     setSaving(false);
     setError("");
     setMessage("");
+    setAuthNotice("");
   }
 
-  if (!token) {
-    return <AuthScreen onAuthenticated={handleAuthenticated} />;
+  if (checkingSession) {
+    return (
+      <main className="auth-shell">
+        <section className="empty-state">
+          <p>Checking your session...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <AuthScreen
+        onAuthenticated={handleAuthenticated}
+        notice={authNotice}
+      />
+    );
   }
 
   return (
@@ -589,7 +647,7 @@ function App() {
           <button
             className="logout-button"
             type="button"
-            onClick={logout}
+            onClick={() => void logout()}
           >
             Sign out
           </button>
@@ -638,9 +696,7 @@ function App() {
             <input
               id="title"
               value={form.title}
-              onChange={(event) =>
-                updateField("title", event.target.value)
-              }
+              onChange={(event) => updateField("title", event.target.value)}
               placeholder="A day worth remembering..."
               maxLength={120}
               required
@@ -651,9 +707,7 @@ function App() {
             <textarea
               id="content"
               value={form.content}
-              onChange={(event) =>
-                updateField("content", event.target.value)
-              }
+              onChange={(event) => updateField("content", event.target.value)}
               placeholder="Write down your thoughts, little wins or big adventures..."
               rows={5}
               maxLength={10000}
@@ -666,9 +720,7 @@ function App() {
                 <select
                   id="mood"
                   value={form.mood}
-                  onChange={(event) =>
-                    updateField("mood", event.target.value)
-                  }
+                  onChange={(event) => updateField("mood", event.target.value)}
                 >
                   <option value="happy">😊 Happy</option>
                   <option value="calm">😌 Calm</option>
