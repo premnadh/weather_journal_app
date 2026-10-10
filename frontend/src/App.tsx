@@ -43,16 +43,43 @@ async function readError(response: Response): Promise<string> {
   return "Something went wrong. Please try again.";
 }
 
+
 /**
- * Requests use the browser's session cookie instead of a JWT
- * stored in React state or browser-accessible storage.
+ * Uses the HttpOnly session cookie for authentication and sends
+ * the CSRF token with state-changing requests.
  */
+function getCsrfToken(): string | null {
+  const cookiePrefix = "weather_journal_csrf=";
+
+  const cookie = document.cookie
+    .split("; ")
+    .find((item) => item.startsWith(cookiePrefix));
+
+  return cookie
+    ? decodeURIComponent(cookie.slice(cookiePrefix.length))
+    : null;
+}
+
 async function apiFetch(
   url: string,
   options: RequestInit = {},
 ): Promise<Response> {
+  const headers = new Headers(options.headers);
+  const method = (options.method ?? "GET").toUpperCase();
+
+  const stateChangingMethods = ["POST", "PUT", "PATCH", "DELETE"];
+
+  if (stateChangingMethods.includes(method)) {
+    const csrfToken = getCsrfToken();
+
+    if (csrfToken) {
+      headers.set("X-CSRF-Token", csrfToken);
+    }
+  }
+
   return fetch(url, {
     ...options,
+    headers,
     credentials: "include",
   });
 }
@@ -61,6 +88,7 @@ type AuthScreenProps = {
   onAuthenticated: () => void;
   notice: string;
 };
+
 
 function AuthScreen({ onAuthenticated, notice }: AuthScreenProps) {
   const [mode, setMode] = useState<"login" | "register">("login");

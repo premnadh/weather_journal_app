@@ -1,4 +1,8 @@
+
+import hashlib
+import hmac
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Generator
 
@@ -7,6 +11,7 @@ from fastapi import (
     Cookie,
     Depends,
     FastAPI,
+    Header,
     HTTPException,
     Response,
     status,
@@ -34,7 +39,6 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 
-
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
@@ -58,6 +62,8 @@ SESSION_COOKIE_SECURE = (
 )
 SESSION_COOKIE_SAMESITE = "lax"
 
+CSRF_COOKIE_NAME = "weather_journal_csrf"
+CSRF_HEADER_NAME = "X-CSRF-Token"
 
 engine = create_engine(
     DATABASE_URL,
@@ -74,7 +80,6 @@ SessionLocal = sessionmaker(
 
 password_hash = PasswordHash.recommended()
 bearer_scheme = HTTPBearer(auto_error=False)
-
 
 # --------------------------------------------------
 # Database models
@@ -171,7 +176,6 @@ with engine.begin() as connection:
         )
     )
 
-
 # --------------------------------------------------
 # FastAPI application
 # --------------------------------------------------
@@ -192,7 +196,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # --------------------------------------------------
 # Request and response schemas
@@ -235,12 +238,6 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserResponse
-
-
 class EntryCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     content: str = Field(default="", max_length=10000)
@@ -249,10 +246,23 @@ class EntryCreate(BaseModel):
 
 
 class EntryUpdate(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=120)
-    content: str | None = Field(default=None, max_length=10000)
-    mood: str | None = Field(default=None, max_length=40)
-    weather: str | None = Field(default=None, max_length=80)
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+    )
+    content: str | None = Field(
+        default=None,
+        max_length=10000,
+    )
+    mood: str | None = Field(
+        default=None,
+        max_length=40,
+    )
+    weather: str | None = Field(
+        default=None,
+        max_length=80,
+    )
 
 
 class EntryResponse(BaseModel):
@@ -265,7 +275,6 @@ class EntryResponse(BaseModel):
     weather: str
     created_at: datetime
 
-
 # --------------------------------------------------
 # Database dependency
 # --------------------------------------------------
@@ -277,7 +286,6 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-
 
 # --------------------------------------------------
 # Authentication helpers
@@ -318,6 +326,92 @@ def clear_session_cookie(response: Response) -> None:
         secure=SESSION_COOKIE_SECURE,
         samesite=SESSION_COOKIE_SAMESITE,
     )
+
+
+def set_csrf_cookie(response: Response, session_token: str) -> str:
+    """Create a CSRF token cryptographically bound to the session."""
+    nonce = secrets.token_urlsafe(32)
+    message = f"{session_token}:{nonce}".encode("utf-8")
+
+    signature = hmac.new(
+        JWT_SECRET_KEY.encode("utf-8"),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
+
+    token = f"{nonce}.{signature}"
+
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=token,
+        httponly=False,
+        secure=SESSION_COOKIE_SECURE,
+        samesite=SESSION_COOKIE_SAMESITE,
+        max_age=ACCESS_TOKEN_MINUTES * 60,
+        path="/",
+    )
+
+    return token
+
+
+def clear_csrf_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=CSRF_COOKIE_NAME,
+        path="/",
+        secure=SESSION_COOKIE_SECURE,
+        samesite=SESSION_COOKIE_SAMESITE,
+    )
+
+
+def validate_csrf_token(
+    csrf_cookie: str | None = Cookie(
+        default=None,
+        alias=CSRF_COOKIE_NAME,
+    ),
+    csrf_header: str | None = Header(
+        default=None,
+        alias=CSRF_HEADER_NAME,
+    ),
+    session_cookie: str | None = Cookie(
+        default=None,
+        alias=SESSION_COOKIE_NAME,
+    ),
+) -> None:
+    """Validate the CSRF header, cookie, and session binding."""
+    if (
+        not csrf_cookie
+        or not csrf_header
+        or not session_cookie
+        or not hmac.compare_digest(csrf_cookie, csrf_header)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing CSRF token",
+        )
+
+    try:
+        nonce, supplied_signature = csrf_cookie.rsplit(".", 1)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing CSRF token",
+        ) from None
+
+    message = f"{session_cookie}:{nonce}".encode("utf-8")
+    expected_signature = hmac.new(
+        JWT_SECRET_KEY.encode("utf-8"),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(
+        supplied_signature,
+        expected_signature,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing CSRF token",
+        )
 
 
 def get_current_user(
@@ -393,7 +487,6 @@ def get_owned_entry(
 
     return entry
 
-
 # --------------------------------------------------
 # Health
 # --------------------------------------------------
@@ -404,7 +497,6 @@ def health():
         "status": "ok",
         "service": "weather-journal-api",
     }
-
 
 # --------------------------------------------------
 # Registration
@@ -442,7 +534,6 @@ def register_user(
         db.commit()
     except IntegrityError:
         db.rollback()
-
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists",
@@ -451,12 +542,11 @@ def register_user(
     db.refresh(user)
     return user
 
-
 # --------------------------------------------------
 # Login
 # --------------------------------------------------
 
-@app.post("/api/auth/login", response_model=TokenResponse)
+@app.post("/api/auth/login", response_model=UserResponse)
 def login_user(
     details: UserLogin,
     response: Response,
@@ -475,31 +565,29 @@ def login_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
         )
 
     token = create_access_token(user.id)
 
-    # Establish the browser session.
     set_session_cookie(response, token)
+    set_csrf_cookie(response, token)
 
-    # Preserve compatibility with existing Bearer-token clients.
-    return TokenResponse(
-        access_token=token,
-        user=user,
-    )
-
+    # Return user details only; never expose the session token in JSON.
+    return user
 
 # --------------------------------------------------
 # Logout
 # --------------------------------------------------
 
 @app.post("/api/auth/logout")
-def logout_user(response: Response):
+def logout_user(
+    response: Response,
+    _: None = Depends(validate_csrf_token),
+):
     clear_session_cookie(response)
+    clear_csrf_cookie(response)
 
     return {"message": "Logged out successfully"}
-
 
 # --------------------------------------------------
 # Current user / session restoration
@@ -510,7 +598,6 @@ def read_current_user(
     user: User = Depends(get_current_user),
 ):
     return user
-
 
 # --------------------------------------------------
 # Journal CRUD
@@ -539,6 +626,7 @@ def list_entries(
 )
 def create_entry(
     entry: EntryCreate,
+    _: None = Depends(validate_csrf_token),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -573,6 +661,7 @@ def read_entry(
 def update_entry(
     entry_id: int,
     updates: EntryUpdate,
+    _: None = Depends(validate_csrf_token),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -596,6 +685,7 @@ def update_entry(
 )
 def delete_entry(
     entry_id: int,
+    _: None = Depends(validate_csrf_token),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
