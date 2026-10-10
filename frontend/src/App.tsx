@@ -1,8 +1,19 @@
-
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import "./App.css";
 
 const API_URL = "";
+
+type User = {
+  id: number;
+  email: string;
+  created_at: string;
+};
+
+type AuthResponse = {
+  access_token: string;
+  token_type: string;
+  user: User;
+};
 
 type JournalEntry = {
   id: number;
@@ -27,51 +38,359 @@ const initialForm: EntryForm = {
   weather: "Sunny",
 };
 
-async function fetchEntries(): Promise<JournalEntry[]> {
-  const response = await fetch(`${API_URL}/api/entries`);
+async function readError(response: Response): Promise<string> {
+  const result = await response.json().catch(() => null);
+  const detail = result?.detail;
 
-  if (!response.ok) {
-    throw new Error("Could not load journal entries.");
+  if (typeof detail === "string") {
+    return detail;
   }
 
-  return response.json() as Promise<JournalEntry[]>;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item: { msg?: string }) => item.msg ?? "")
+      .join(" ");
+  }
+
+  return "Something went wrong. Please try again.";
+}
+
+async function authenticatedFetch(
+  token: string,
+  url: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(options.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+
+  return fetch(url, {
+    ...options,
+    headers,
+  });
+}
+
+type AuthScreenProps = {
+  onAuthenticated: (token: string) => void;
+};
+
+function AuthScreen({ onAuthenticated }: AuthScreenProps) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setBusy(true);
+    setError("");
+    setMessage("");
+
+    try {
+      if (mode === "register") {
+        const registration = await fetch(
+          `${API_URL}/api/auth/register`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email,
+              password,
+            }),
+          },
+        );
+
+        if (!registration.ok) {
+          throw new Error(await readError(registration));
+        }
+
+        setMode("login");
+        setPassword("");
+        setMessage(
+          "Account created. Sign in to open your journal.",
+        );
+
+        return;
+      }
+
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      const result = (await response.json()) as AuthResponse;
+      onAuthenticated(result.access_token);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to sign in.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function changeMode(nextMode: "login" | "register") {
+    setMode(nextMode);
+    setError("");
+    setMessage("");
+  }
+
+  return (
+    <main className="auth-shell">
+      <header className="topbar">
+        <a
+          className="brand"
+          href="/"
+          aria-label="Daylight Journal home"
+        >
+          <span className="brand-icon">☀</span>
+          <span>
+            daylight <span className="brand-light">journal</span>
+          </span>
+        </a>
+
+        <span className="topbar-label">
+          YOUR PERSONAL WEATHER DIARY
+        </span>
+      </header>
+
+      <section className="auth-layout">
+        <div className="auth-intro">
+          <p className="eyebrow">A LITTLE SPACE FOR YOURSELF</p>
+
+          <h1>
+            Every day has
+            <br />
+            <span>a story.</span>
+          </h1>
+
+          <p className="hero-copy">
+            Capture the moments, moods and weather that make
+            each day yours. Your journal is personal, just like
+            your story.
+          </p>
+
+          <div className="auth-decoration" aria-hidden="true">
+            <span>☁️</span>
+            <span>☀️</span>
+            <span>☁️</span>
+          </div>
+        </div>
+
+        <section className="auth-card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">
+                {mode === "login" ? "WELCOME BACK" : "A NEW CHAPTER"}
+              </p>
+
+              <h2>
+                {mode === "login"
+                  ? "Your journal awaits."
+                  : "Create your account."}
+              </h2>
+            </div>
+
+            <span className="heading-icon">✎</span>
+          </div>
+
+          <p className="auth-description">
+            {mode === "login"
+              ? "Sign in to revisit your favourite moments."
+              : "Create a private space for your daily moments."}
+          </p>
+
+          <form
+            className="entry-form auth-form"
+            onSubmit={handleSubmit}
+          >
+            <label htmlFor="auth-email">Email address</label>
+
+            <input
+              id="auth-email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              maxLength={254}
+              required
+            />
+
+            <label htmlFor="auth-password">Password</label>
+
+            <input
+              id="auth-password"
+              type="password"
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={
+                mode === "register"
+                  ? "At least 8 characters"
+                  : "Your password"
+              }
+              minLength={mode === "register" ? 8 : 1}
+              maxLength={128}
+              required
+            />
+
+            {error && (
+              <p className="feedback error" role="alert">
+                {error}
+              </p>
+            )}
+
+            {message && (
+              <p className="feedback success" role="status">
+                {message}
+              </p>
+            )}
+
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={busy}
+            >
+              {busy
+                ? "Please wait..."
+                : mode === "login"
+                  ? "Sign in →"
+                  : "Create account →"}
+            </button>
+          </form>
+
+          <p className="auth-switch">
+            {mode === "login"
+              ? "New to Daylight Journal?"
+              : "Already have an account?"}{" "}
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                changeMode(mode === "login" ? "register" : "login")
+              }
+            >
+              {mode === "login" ? "Create an account" : "Sign in"}
+            </button>
+          </p>
+        </section>
+      </section>
+
+      <footer className="footer">
+        <span>Made for the moments in between.</span>
+        <span>DAYLIGHT JOURNAL · FULL-STACK EDITION</span>
+      </footer>
+    </main>
+  );
 }
 
 function App() {
+  const [token, setToken] = useState<string | null>(null);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [form, setForm] = useState<EntryForm>(initialForm);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const loadEntries = useCallback(async () => {
+    const accessToken = token;
+
+    if (!accessToken) {
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      const data = await fetchEntries();
+      const response = await authenticatedFetch(
+        accessToken,
+        `${API_URL}/api/entries`,
+      );
+
+      if (response.status === 401) {
+        setToken(null);
+        throw new Error(
+          "Your session has expired. Please sign in again.",
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      const data = (await response.json()) as JournalEntry[];
+
       setEntries(data);
       setError("");
-    } catch {
-      setError("Cannot connect to the journal API. Is the backend running?");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not load entries.",
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
-  useEffect(() => {
+   useEffect(() => {
+    if (token === null) {
+      return;
+    }
+
     let cancelled = false;
 
-    async function loadInitialEntries() {
+    async function loadInitialEntries(accessToken: string) {
       try {
-        const data = await fetchEntries();
+        const response = await authenticatedFetch(
+          accessToken,
+          `${API_URL}/api/entries`,
+        );
+
+        if (response.status === 401) {
+          if (!cancelled) {
+            setToken(null);
+            setError(
+              "Your session has expired. Please sign in again.",
+            );
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(await readError(response));
+        }
+
+        const data = (await response.json()) as JournalEntry[];
 
         if (!cancelled) {
           setEntries(data);
           setError("");
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setError("Cannot connect to the journal API. Is the backend running?");
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not load entries.",
+          );
         }
       } finally {
         if (!cancelled) {
@@ -80,56 +399,84 @@ function App() {
       }
     }
 
-    void loadInitialEntries();
+    void loadInitialEntries(token);
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [token]);
+
+  function handleAuthenticated(accessToken: string) {
+    setLoading(true);
+    setToken(accessToken);
+    setError("");
+    setMessage("");
+  }
 
   function updateField(field: keyof EntryForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const accessToken = token;
+
+    if (!accessToken) {
+      return;
+    }
+
     setSaving(true);
     setError("");
     setMessage("");
 
     const wasEditing = editingId !== null;
 
-    try {
-      const url = wasEditing
-        ? `${API_URL}/api/entries/${editingId}`
-        : `${API_URL}/api/entries`;
+    const url = wasEditing
+      ? `${API_URL}/api/entries/${editingId}`
+      : `${API_URL}/api/entries`;
 
-      const response = await fetch(url, {
-        method: wasEditing ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+    try {
+      const response = await authenticatedFetch(
+        accessToken,
+        url,
+        {
+          method: wasEditing ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(form),
+        },
+      );
+
+      if (response.status === 401) {
+        setToken(null);
+        throw new Error(
+          "Your session has expired. Please sign in again.",
+        );
+      }
 
       if (!response.ok) {
-        const result = await response.json().catch(() => null);
-        const detail = result?.detail;
-        const errorMessage =
-          typeof detail === "string"
-            ? detail
-            : Array.isArray(detail)
-              ? detail.map((item: { msg?: string }) => item.msg ?? "").join(" ")
-              : "Could not save the entry. Please check your details.";
-
-        throw new Error(errorMessage);
+        throw new Error(await readError(response));
       }
 
       setForm(initialForm);
       setEditingId(null);
-      setMessage(wasEditing ? "Entry updated successfully." : "Your moment has been saved.");
+
+      setMessage(
+        wasEditing
+          ? "Entry updated successfully."
+          : "Your moment has been saved.",
+      );
 
       await loadEntries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(
+        err instanceof Error ? err.message : "Could not save entry.",
+      );
     } finally {
       setSaving(false);
     }
@@ -137,15 +484,21 @@ function App() {
 
   function editEntry(entry: JournalEntry) {
     setEditingId(entry.id);
+
     setForm({
       title: entry.title,
       content: entry.content,
       mood: entry.mood,
       weather: entry.weather,
     });
+
     setError("");
     setMessage("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   function cancelEditing() {
@@ -156,7 +509,12 @@ function App() {
   }
 
   async function deleteEntry(id: number) {
-    if (!window.confirm("Delete this journal entry?")) {
+    const accessToken = token;
+
+    if (
+      !accessToken ||
+      !window.confirm("Delete this journal entry?")
+    ) {
       return;
     }
 
@@ -164,12 +522,21 @@ function App() {
     setMessage("");
 
     try {
-      const response = await fetch(`${API_URL}/api/entries/${id}`, {
-        method: "DELETE",
-      });
+      const response = await authenticatedFetch(
+        accessToken,
+        `${API_URL}/api/entries/${id}`,
+        { method: "DELETE" },
+      );
+
+      if (response.status === 401) {
+        setToken(null);
+        throw new Error(
+          "Your session has expired. Please sign in again.",
+        );
+      }
 
       if (!response.ok) {
-        throw new Error("Could not delete the entry.");
+        throw new Error(await readError(response));
       }
 
       if (editingId === id) {
@@ -179,34 +546,73 @@ function App() {
       setMessage("Entry deleted successfully.");
       await loadEntries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(
+        err instanceof Error ? err.message : "Could not delete entry.",
+      );
     }
+  }
+
+  function logout() {
+    setToken(null);
+    setEntries([]);
+    setForm(initialForm);
+    setEditingId(null);
+    setLoading(false);
+    setSaving(false);
+    setError("");
+    setMessage("");
+  }
+
+  if (!token) {
+    return <AuthScreen onAuthenticated={handleAuthenticated} />;
   }
 
   return (
     <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Daylight Journal home">
+        <a
+          className="brand"
+          href="/"
+          aria-label="Daylight Journal home"
+        >
           <span className="brand-icon">☀</span>
           <span>
             daylight <span className="brand-light">journal</span>
           </span>
         </a>
-        <span className="topbar-label">YOUR PERSONAL WEATHER DIARY</span>
+
+        <div className="account-actions">
+          <span className="topbar-label">
+            YOUR PERSONAL WEATHER DIARY
+          </span>
+
+          <button
+            className="logout-button"
+            type="button"
+            onClick={logout}
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       <section className="hero">
         <p className="eyebrow">A LITTLE SPACE FOR YOURSELF</p>
+
         <h1>
           Every day has
           <br />
           <span>a story.</span>
         </h1>
+
         <p className="hero-copy">
           Capture the moments, moods and weather that make each day yours.
         </p>
+
         <div className="hero-decoration" aria-hidden="true">
-          ☁️ ☀️ ☁️
+          <span>☁️</span>
+          <span>☀️</span>
+          <span>☁️</span>
         </div>
       </section>
 
@@ -217,27 +623,37 @@ function App() {
               <p className="eyebrow">
                 {editingId !== null ? "MAKE A CHANGE" : "PAUSE & REFLECT"}
               </p>
-              <h2>{editingId !== null ? "Edit your entry" : "Today's journal"}</h2>
+
+              <h2>
+                {editingId !== null ? "Edit your entry" : "Today's journal"}
+              </h2>
             </div>
+
             <span className="heading-icon">✎</span>
           </div>
 
           <form className="entry-form" onSubmit={handleSubmit}>
             <label htmlFor="title">Give this day a title</label>
+
             <input
               id="title"
               value={form.title}
-              onChange={(event) => updateField("title", event.target.value)}
+              onChange={(event) =>
+                updateField("title", event.target.value)
+              }
               placeholder="A day worth remembering..."
               maxLength={120}
               required
             />
 
             <label htmlFor="content">What happened?</label>
+
             <textarea
               id="content"
               value={form.content}
-              onChange={(event) => updateField("content", event.target.value)}
+              onChange={(event) =>
+                updateField("content", event.target.value)
+              }
               placeholder="Write down your thoughts, little wins or big adventures..."
               rows={5}
               maxLength={10000}
@@ -246,10 +662,13 @@ function App() {
             <div className="form-row">
               <div>
                 <label htmlFor="mood">Your mood</label>
+
                 <select
                   id="mood"
                   value={form.mood}
-                  onChange={(event) => updateField("mood", event.target.value)}
+                  onChange={(event) =>
+                    updateField("mood", event.target.value)
+                  }
                 >
                   <option value="happy">😊 Happy</option>
                   <option value="calm">😌 Calm</option>
@@ -263,10 +682,13 @@ function App() {
 
               <div>
                 <label htmlFor="weather">Weather</label>
+
                 <select
                   id="weather"
                   value={form.weather}
-                  onChange={(event) => updateField("weather", event.target.value)}
+                  onChange={(event) =>
+                    updateField("weather", event.target.value)
+                  }
                 >
                   <option>Sunny</option>
                   <option>Cloudy</option>
@@ -292,7 +714,11 @@ function App() {
               </p>
             )}
 
-            <button className="primary-button" type="submit" disabled={saving}>
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={saving}
+            >
               {saving
                 ? "Saving..."
                 : editingId !== null
@@ -318,6 +744,7 @@ function App() {
               <p className="eyebrow">YOUR COLLECTION</p>
               <h2>Recent moments</h2>
             </div>
+
             <span className="count-badge">{entries.length}</span>
           </div>
 
@@ -329,7 +756,10 @@ function App() {
             <div className="empty-state">
               <span>📖</span>
               <h3>Your story starts here.</h3>
-              <p>Your saved entries will appear here. Make your first moment count.</p>
+              <p>
+                Your saved entries will appear here. Make your first
+                moment count.
+              </p>
             </div>
           ) : (
             <div className="entry-list">
@@ -337,19 +767,25 @@ function App() {
                 <article className="entry-card" key={entry.id}>
                   <div className="entry-card-top">
                     <span className="weather-pill">
-                      {weatherEmoji(entry.weather)} {entry.weather || "No weather"}
+                      {weatherEmoji(entry.weather)}{" "}
+                      {entry.weather || "No weather"}
                     </span>
+
                     <span className="mood-pill">
                       {moodEmoji(entry.mood)} {entry.mood}
                     </span>
                   </div>
 
                   <h3>{entry.title}</h3>
+
                   <p className="entry-date">
-                    {new Date(entry.created_at).toLocaleString(undefined, {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })}
+                    {new Date(entry.created_at).toLocaleString(
+                      undefined,
+                      {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      },
+                    )}
                   </p>
 
                   {entry.content && (
@@ -357,9 +793,13 @@ function App() {
                   )}
 
                   <div className="entry-actions">
-                    <button type="button" onClick={() => editEntry(entry)}>
+                    <button
+                      type="button"
+                      onClick={() => editEntry(entry)}
+                    >
                       Edit
                     </button>
+
                     <button
                       type="button"
                       className="delete-action"

@@ -1,8 +1,11 @@
+
 services:
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
     environment:
       DATABASE_URL: sqlite:////data/weather_journal.db
     ports:
