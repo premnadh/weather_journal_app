@@ -178,3 +178,22 @@ def test_rejects_empty_title():
     )
 
     assert response.status_code == 422
+
+def test_authenticated_write_without_csrf_token_is_rejected():
+    with TestClient(app) as test_client:
+        register_user(test_client)
+
+        # The session cookie remains present, but the request
+        # deliberately omits the X-CSRF-Token header.
+        response = test_client.post(
+            "/api/entries",
+            json={
+                "title": "CSRF protection test",
+                "content": "This request should be rejected.",
+                "mood": "neutral",
+                "weather": "Cloudy",
+            },
+        )
+
+        assert "weather_journal_session" in test_client.cookies
+        assert response.status_code == 403
