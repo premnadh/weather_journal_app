@@ -43,15 +43,21 @@ from sqlalchemy.orm import (
 # Configuration
 # --------------------------------------------------
 
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "sqlite:///./weather_journal.db",
 )
 
-JWT_SECRET_KEY = os.getenv(
-    "JWT_SECRET_KEY",
-    "local-development-only-change-this-secret",
-)
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not JWT_SECRET_KEY:
+    if APP_ENV == "production":
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be configured in production."
+        )
+    JWT_SECRET_KEY = "local-development-only-change-this-secret"
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 30
@@ -59,11 +65,13 @@ ACCESS_TOKEN_MINUTES = 30
 SESSION_COOKIE_NAME = "weather_journal_session"
 SESSION_COOKIE_SECURE = (
     os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    or APP_ENV == "production"
 )
 SESSION_COOKIE_SAMESITE = "lax"
 
 CSRF_COOKIE_NAME = "weather_journal_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
+
 
 engine = create_engine(
     DATABASE_URL,
@@ -186,16 +194,27 @@ app = FastAPI(
     version="2.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+if APP_ENV != "production":
+    frontend_origins.extend([
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-    ],
+    ])
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # --------------------------------------------------
 # Request and response schemas

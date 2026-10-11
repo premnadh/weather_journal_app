@@ -629,3 +629,401 @@ button {
     gap: 8px;
   }
 }
+
+/* Weather-responsive dashboard backgrounds */
+.app-shell {
+  transition: background 1s ease, color 0.5s ease;
+}
+
+.app-shell.weather-sunny {
+  background: linear-gradient(145deg, #fff9df 0%, #f7e9ba 48%, #f8f8f3 100%);
+}
+
+.app-shell.weather-cloudy {
+  background: linear-gradient(145deg, #e7edf4 0%, #dce5ed 48%, #f8f8f3 100%);
+}
+
+.app-shell.weather-rainy {
+  background: linear-gradient(145deg, #d4e0ec 0%, #b9cbdc 48%, #edf1f5 100%);
+}
+
+.app-shell.weather-snowy {
+  background: linear-gradient(145deg, #f4faff 0%, #e2edf7 48%, #ffffff 100%);
+}
+
+.app-shell.weather-foggy {
+  background: linear-gradient(145deg, #e9ecea 0%, #d6ddda 48%, #f7f8f6 100%);
+}
+
+.app-shell.weather-stormy {
+  background: linear-gradient(145deg, #c5c8d8 0%, #aeb4c9 48%, #e8e9ef 100%);
+}
+
+.app-shell.weather-night {
+  background: linear-gradient(145deg, #1e2a43 0%, #34415e 48%, #4b5870 100%);
+  color: #f5f6fb;
+}
+
+.app-shell.weather-night .topbar {
+  border-bottom-color: #ffffff30;
+}
+
+.app-shell.weather-night .brand,
+.app-shell.weather-night .hero h1 {
+  color: #f5f6fb;
+}
+
+.app-shell.weather-night .brand-light,
+.app-shell.weather-night .hero-copy,
+.app-shell.weather-night .topbar-label,
+.app-shell.weather-night .eyebrow {
+  color: #c3cde0;
+}
+
+.app-shell.weather-night .hero h1 span {
+  color: #e4cf9b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell {
+    transition: none;
+  }
+}
+
+.current-weather {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px solid #ffffffa0;
+  border-radius: 18px;
+  background: #ffffff90;
+  box-shadow: 0 8px 28px #26372f0a;
+  backdrop-filter: blur(12px);
+}
+
+.current-weather-icon {
+  font-size: 42px;
+  line-height: 1;
+}
+
+.current-weather-location {
+  margin: 0 0 5px;
+  color: #657267;
+  font-size: 12px;
+}
+
+.current-weather-temperature {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  color: #26372f;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.current-weather-temperature span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.current-weather-details,
+.current-weather-status {
+  margin: 6px 0 0;
+  color: #657267;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.weather-night .current-weather {
+  border-color: #ffffff30;
+  background: #ffffff14;
+}
+
+.weather-night .current-weather-temperature {
+  color: #ffffff;
+}
+
+.weather-night .current-weather-location,
+.weather-night .current-weather-details,
+.weather-night .current-weather-status {
+  color: #d3dced;
+}
+
+@media (max-width: 480px) {
+  .current-weather {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .current-weather-icon {
+    font-size: 34px;
+  }
+
+  .current-weather-temperature {
+    font-size: 24px;
+  }
+}
+
+/* Full-viewport weather background */
+:root {
+  background: #f8f8f3;
+}
+
+body {
+  min-height: 100vh;
+  background: transparent;
+}
+
+body:has(.app-shell) {
+  background: var(--weather-page-background, #f8f8f3);
+  transition: background 1s ease;
+}
+
+body:has(.app-shell.weather-sunny) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #fff5cb 0%,
+    #f8dfa1 50%,
+    #f8f8f3 100%
+  );
+}
+
+body:has(.app-shell.weather-cloudy) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #dbe6f0 0%,
+    #c7d4e1 50%,
+    #f1f4f7 100%
+  );
+}
+
+body:has(.app-shell.weather-rainy) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #b8c9dc 0%,
+    #8fa9c2 50%,
+    #dbe4ed 100%
+  );
+}
+
+body:has(.app-shell.weather-snowy) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #f7fbff 0%,
+    #dceafa 50%,
+    #ffffff 100%
+  );
+}
+
+body:has(.app-shell.weather-foggy) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #e7ecea 0%,
+    #cbd5d2 50%,
+    #f5f7f6 100%
+  );
+}
+
+body:has(.app-shell.weather-stormy) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #b8bbd0 0%,
+    #858da9 50%,
+    #d7d9e5 100%
+  );
+}
+
+body:has(.app-shell.weather-night) {
+  --weather-page-background: linear-gradient(
+    135deg,
+    #101a30 0%,
+    #273754 50%,
+    #43516d 100%
+  );
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0 max(24px, calc((100vw - 1104px) / 2));
+  overflow: hidden;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Weather animation layer */
+body:has(.app-shell) {
+  position: relative;
+}
+
+body:has(.app-shell)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.app-shell {
+  position: relative;
+  z-index: 1;
+}
+
+/* Sunny: soft, warm sunlight */
+body:has(.app-shell.weather-sunny)::before {
+  opacity: 1;
+  background:
+    radial-gradient(
+      circle at 85% 12%,
+      rgba(255, 219, 112, 0.38),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 10% 85%,
+      rgba(255, 244, 190, 0.3),
+      transparent 35%
+    );
+  animation: sunlight-pulse 8s ease-in-out infinite alternate;
+}
+
+/* Cloudy: slowly drifting cloud shadows */
+body:has(.app-shell.weather-cloudy)::before {
+  opacity: 1;
+  background:
+    radial-gradient(ellipse at 20% 25%, rgba(255,255,255,.38), transparent 35%),
+    radial-gradient(ellipse at 75% 60%, rgba(255,255,255,.3), transparent 40%);
+  background-size: 140% 140%;
+  animation: clouds-drift 28s ease-in-out infinite alternate;
+}
+
+/* Rainy: falling rain streaks */
+body:has(.app-shell.weather-rainy)::before {
+  opacity: 0.42;
+  background-image: repeating-linear-gradient(
+    105deg,
+    transparent 0 22px,
+    rgba(255,255,255,.5) 23px,
+    transparent 24px 43px
+  );
+  background-size: 100% 180px;
+  animation: rain-fall 0.7s linear infinite;
+}
+
+/* Snowy: drifting snowflakes */
+body:has(.app-shell.weather-snowy)::before {
+  opacity: 0.7;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,.95) 1.5px, transparent 2.5px),
+    radial-gradient(circle, rgba(255,255,255,.8) 2px, transparent 3px),
+    radial-gradient(circle, rgba(255,255,255,.65) 1px, transparent 2px);
+  background-size: 90px 110px, 150px 170px, 65px 80px;
+  background-position: 0 0, 35px 50px, 20px 25px;
+  animation: snow-fall 12s linear infinite;
+}
+
+/* Stormy: heavy rain */
+body:has(.app-shell.weather-stormy)::before {
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    110deg,
+    transparent 0 13px,
+    rgba(255,255,255,.55) 14px,
+    transparent 15px 28px
+  );
+  background-size: 100% 160px;
+  animation: rain-fall 0.38s linear infinite;
+}
+
+/* Stormy: occasional lightning flash */
+body:has(.app-shell.weather-stormy)::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: rgba(255,255,255,.5);
+  opacity: 0;
+  animation: lightning-flash 9s linear infinite;
+}
+
+/* Night: subtle moving stars */
+
+body:has(.app-shell.weather-night)::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 1;
+  background:
+    radial-gradient(circle at 15% 25%, rgba(255,255,255,.9) 1px, transparent 2px),
+    radial-gradient(circle at 70% 35%, rgba(255,255,255,.8) 1.5px, transparent 3px),
+    radial-gradient(circle at 45% 70%, rgba(255,255,255,.75) 1px, transparent 2px),
+    radial-gradient(circle at 85% 80%, rgba(255,255,255,.85) 1px, transparent 2px);
+  background-size: 180px 160px, 230px 210px, 200px 190px, 250px 230px;
+  animation: night-stars 5s ease-in-out infinite alternate;
+}
+
+@keyframes night-stars {
+  from {
+    opacity: 0.25;
+    background-position: 0 0, 0 0, 0 0, 0 0;
+  }
+  to {
+    opacity: 0.95;
+    background-position: 20px 10px, -15px 20px, 10px -15px, -20px 10px;
+  }
+}
+
+
+/* Animation definitions */
+@keyframes sunlight-pulse {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
+@keyframes clouds-drift {
+  from { background-position: 0% 0%; }
+  to { background-position: 100% 50%; }
+}
+
+@keyframes rain-fall {
+  from { background-position: 0 -180px; }
+  to { background-position: 0 0; }
+}
+
+@keyframes snow-fall {
+  from { background-position: 0 -200px, 35px -150px, 20px -100px; }
+  to { background-position: 45px 200px, -15px 250px, 60px 180px; }
+}
+
+@keyframes lightning-flash {
+  0%, 92%, 94%, 96%, 100% { opacity: 0; }
+  93%, 95% { opacity: 0.22; }
+}
+
+@keyframes stars-twinkle {
+  from { opacity: 0.3; }
+  to { opacity: 0.8; }
+}
+
+/* Respect accessibility preferences */
+@media (prefers-reduced-motion: reduce) {
+  body:has(.app-shell)::before,
+  body:has(.app-shell)::after {
+    animation: none !important;
+  }
+}

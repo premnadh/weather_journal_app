@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import "./App.css";
 
-const API_URL = "";
+const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 type JournalEntry = {
   id: number;
@@ -18,6 +18,116 @@ type EntryForm = {
   mood: string;
   weather: string;
 };
+
+type WeatherTheme =
+  | "sunny"
+  | "cloudy"
+  | "rainy"
+  | "snowy"
+  | "foggy"
+  | "stormy"
+  | "night";
+
+type CurrentWeather = {
+  temperature: number;
+  feelsLike: number;
+  humidity: number;
+  windSpeed: number;
+  weatherCode: number;
+  isDay: boolean;
+  description: string;
+  emoji: string;
+  theme: WeatherTheme;
+  location: string;
+};
+
+type OpenMeteoResponse = {
+  current: {
+    temperature_2m: number;
+    apparent_temperature: number;
+    relative_humidity_2m: number;
+    wind_speed_10m: number;
+    weather_code: number;
+    is_day: number;
+  };
+  current_units?: {
+    temperature_2m?: string;
+    wind_speed_10m?: string;
+  };
+  timezone?: string;
+};
+
+function describeWeather(code: number, isDay: boolean) {
+  if (!isDay) {
+    return {
+      description: "Clear night",
+      emoji: "🌙",
+      theme: "night" as WeatherTheme,
+    };
+  }
+
+  if (code === 0) {
+    return {
+      description: "Clear sky",
+      emoji: "☀️",
+      theme: "sunny" as WeatherTheme,
+    };
+  }
+
+  if (code === 1) {
+    return {
+      description: "Mainly clear",
+      emoji: "🌤️",
+      theme: "sunny" as WeatherTheme,
+    };
+  }
+
+  if (code === 2 || code === 3) {
+    return {
+      description: code === 2 ? "Partly cloudy" : "Overcast",
+      emoji: code === 2 ? "⛅" : "☁️",
+      theme: "cloudy" as WeatherTheme,
+    };
+  }
+
+  if (code === 45 || code === 48) {
+    return {
+      description: "Foggy",
+      emoji: "🌫️",
+      theme: "foggy" as WeatherTheme,
+    };
+  }
+
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+    return {
+      description: "Rainy",
+      emoji: "🌧️",
+      theme: "rainy" as WeatherTheme,
+    };
+  }
+
+  if ([71, 73, 75, 77, 85, 86].includes(code)) {
+    return {
+      description: "Snowy",
+      emoji: "❄️",
+      theme: "snowy" as WeatherTheme,
+    };
+  }
+
+  if ([95, 96, 99].includes(code)) {
+    return {
+      description: "Thunderstorm",
+      emoji: "⛈️",
+      theme: "stormy" as WeatherTheme,
+    };
+  }
+
+  return {
+    description: "Cloudy",
+    emoji: "☁️",
+    theme: "cloudy" as WeatherTheme,
+  };
+}
 
 const initialForm: EntryForm = {
   title: "",
@@ -341,6 +451,13 @@ function App() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+const [currentWeather, setCurrentWeather] =
+  useState<CurrentWeather | null>(null);
+const [weatherStatus, setWeatherStatus] = useState(
+  "Allow location access to see your local weather.",
+);
+
+
   const expireSession = useCallback(() => {
     setIsAuthenticated(false);
     setEntries([]);
@@ -350,6 +467,105 @@ function App() {
     setError("");
     setMessage("");
   }, []);
+  
+
+useEffect(() => {
+  if (!isAuthenticated) {
+    return;
+  }
+
+  let cancelled = false;
+  let refreshTimer: ReturnType<typeof setInterval> | undefined;
+
+  async function fetchWeather(latitude: number, longitude: number) {
+    try {
+      const params = new URLSearchParams({
+        latitude: String(latitude),
+        longitude: String(longitude),
+        current:
+          "temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day",
+        timezone: "auto",
+      });
+
+      const response = await fetch(
+        `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+      );
+
+      if (!response.ok) {
+        throw new Error("Weather service is temporarily unavailable.");
+      }
+
+      const data = (await response.json()) as OpenMeteoResponse;
+      if (cancelled) return;
+
+      const current = data.current;
+      const details = describeWeather(
+        current.weather_code,
+        current.is_day === 1,
+      );
+
+      setCurrentWeather({
+        temperature: Math.round(current.temperature_2m),
+        feelsLike: Math.round(current.apparent_temperature),
+        humidity: current.relative_humidity_2m,
+        windSpeed: Math.round(current.wind_speed_10m),
+        weatherCode: current.weather_code,
+        isDay: current.is_day === 1,
+        description: details.description,
+        emoji: details.emoji,
+        theme: details.theme,
+        location: "Your current location",
+      });
+      setWeatherStatus("");
+    } catch {
+      if (!cancelled) {
+        setWeatherStatus(
+          "Unable to load current weather. Your journal is still available.",
+        );
+      }
+    }
+  }
+
+  if (!navigator.geolocation) {
+  return;
+}
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      if (cancelled) return;
+
+      const { latitude, longitude } = position.coords;
+      void fetchWeather(latitude, longitude);
+
+      refreshTimer = setInterval(() => {
+        void fetchWeather(latitude, longitude);
+      }, 15 * 60 * 1000);
+    },
+    (error) => {
+      if (cancelled) return;
+
+      if (error.code === error.PERMISSION_DENIED) {
+        setWeatherStatus(
+          "Location access was denied. Allow location permission in your browser to see local weather.",
+        );
+      } else {
+        setWeatherStatus(
+          "Could not determine your location. Your journal is still available.",
+        );
+      }
+    },
+    {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 5 * 60 * 1000,
+    },
+  );
+
+  return () => {
+    cancelled = true;
+    if (refreshTimer) clearInterval(refreshTimer);
+  };
+}, [isAuthenticated]);
 
   // Restore the session after a page refresh.
   useEffect(() => {
@@ -654,7 +870,9 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main
+  className={`app-shell${currentWeather ? ` weather-${currentWeather.theme}` : ""}`}
+>
       <header className="topbar">
         <a
           className="brand"
@@ -694,6 +912,38 @@ function App() {
         <p className="hero-copy">
           Capture the moments, moods and weather that make each day yours.
         </p>
+
+      <section className="current-weather" aria-live="polite">
+        {currentWeather ? (
+    <>
+      <span className="current-weather-icon" aria-hidden="true">
+        {currentWeather.emoji}
+      </span>
+
+      <div>
+        <p className="current-weather-location">
+          {currentWeather.location}
+        </p>
+        <p className="current-weather-temperature">
+          {currentWeather.temperature}°C
+          <span>{currentWeather.description}</span>
+        </p>
+        <p className="current-weather-details">
+          Feels like {currentWeather.feelsLike}°C
+          {" · "}Humidity {currentWeather.humidity}%
+          {" · "}Wind {currentWeather.windSpeed} km/h
+        </p>
+      </div>
+    </>
+  ) : (
+    <p className="current-weather-status">
+  {weatherStatus ||
+    (!navigator.geolocation
+      ? "Location services are not supported by this browser."
+      : "Loading your local weather…")}
+</p>
+  )}
+</section>
 
         <div className="hero-decoration" aria-hidden="true">
           <span>☁️</span>
