@@ -5,6 +5,7 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Generator
+from fastapi.staticfiles import StaticFiles
 
 import jwt
 from fastapi import (
@@ -714,3 +715,13 @@ def delete_entry(
     db.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+from pathlib import Path
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+if STATIC_DIR.exists():
+    app.mount(
+        "/",
+        StaticFiles(directory=STATIC_DIR, html=True),
+        name="frontend",
+    )
